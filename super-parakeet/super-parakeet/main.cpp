@@ -109,12 +109,11 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 
 		std::cout << "Original CRC: " << std::hex << originalCrc << std::endl;
 
-		// Copy the packet, modified the code number, and send our new copy.
+		// Copy the packet, modify the code number, and send our new copy.
 		if ( adHandle != nullptr )
 		{
 			std::vector<u_char> copyPacket = std::vector<u_char>( header->len );
 			std::copy( pkt_data, pkt_data + header->len, copyPacket.begin() );
-
 #if 0
 			// Just use this to test.
 			copyPacket[82] = '1';
@@ -123,7 +122,7 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 			copyPacket[85] = '4';
 #endif
 
-			auto crc	  = crc32( 0x04C11DB7, copyPacket.data() + 42, 
+			auto crc	  = crc32( 0x00000000, copyPacket.data() + 42, 
 									header->len - ( 42 + 4 ) );
 			std::cout << "CRC: " << std::hex << crc << std::endl;
 
