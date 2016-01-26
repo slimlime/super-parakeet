@@ -7,6 +7,7 @@
 #include <iostream>
 #include <vector>
 #include <stdint.h>
+#include <thread>
 
 #include "stdio.h"
 
@@ -314,6 +315,38 @@ void InsertUDPChecksum( uint8_t* data )
 }
 
 
+void SendPacket( const pcap_pkthdr* header, const u_char* pkt_data, int i,
+					int packetCount )
+{
+	std::vector<u_char> copyPacket = std::vector<u_char>( header->len );
+	std::copy( pkt_data, pkt_data + header->len, copyPacket.begin() );
+
+	int code = i;
+	copyPacket[82] = '0' + ( code / 1000 );
+
+	code %= 1000;
+	copyPacket[83] = '0' + ( code / 100 );
+
+	code %= 100;
+	copyPacket[84] = '0' + ( code / 10 );
+
+	code %= 10;
+	copyPacket[85] = '0' + ( code );
+
+	// Increment sequence numbers.
+	increment_sequence_number( copyPacket.data(), 5, 100 + packetCount );
+	increment_sequence_number( copyPacket.data(), 11, 100 + packetCount );
+	increment_sequence_number( copyPacket.data(), 14, 100 + packetCount );
+
+	InsertCrc32( copyPacket.data(), header->len );
+	write_checksum_ip( copyPacket.data() );
+	InsertUDPChecksum( copyPacket.data() );
+
+	// Send the copied packet.
+	pcap_sendpacket( adHandle, copyPacket.data(), header->len );
+}
+
+
 void PacketHandler( u_char* param, const pcap_pkthdr* header,
 	const u_char* pkt_data )
 {
@@ -350,26 +383,17 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 		// Copy the packet, modify the code number, and send our new copy.
 		if ( adHandle != nullptr )
 		{
-			std::vector<u_char> copyPacket = std::vector<u_char>( header->len );
-			std::copy( pkt_data, pkt_data + header->len, copyPacket.begin() );
-			
-			// Just use this to test.
-			copyPacket[82] = '1';
-			copyPacket[83] = '2';
-			copyPacket[84] = '3';
-			copyPacket[85] = '4';
-
-			// Increment sequence numbers.
-			increment_sequence_number( copyPacket.data(), 5, 10 );
-			increment_sequence_number( copyPacket.data(), 11, 10 );
-			increment_sequence_number( copyPacket.data(), 14, 10 );
-
-			InsertCrc32( copyPacket.data(), header->len );
-			write_checksum_ip( copyPacket.data() );
-			InsertUDPChecksum( copyPacket.data() );
-
-			// Send the copied packet.
-			pcap_sendpacket( adHandle, copyPacket.data(), header->len );
+			int packetCount = 0;
+			for( int i = 0; i < 10000; ++i )
+			{
+				if( i == 7777 )
+				{
+					continue;
+				}
+				SendPacket( header, pkt_data, i, 600 + packetCount );
+				SendPacket( header, pkt_data, i, 600 + packetCount );
+				packetCount += 1;
+			}
 		}
 	}
 }

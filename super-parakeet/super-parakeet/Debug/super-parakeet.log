@@ -1,1 +1,4 @@
-﻿
+﻿  main.cpp
+c:\users\ben\documents\github\super-parakeet\super-parakeet\super-parakeet\main.cpp(107): warning C4244: 'return': conversion from 'unsigned long' to 'uint16_t', possible loss of data
+c:\users\ben\documents\github\super-parakeet\super-parakeet\super-parakeet\main.cpp(277): warning C4018: '<': signed/unsigned mismatch
+  super-parakeet.vcxproj -> C:\Users\Ben\Documents\GitHub\super-parakeet\super-parakeet\Debug\super-parakeet.exe
