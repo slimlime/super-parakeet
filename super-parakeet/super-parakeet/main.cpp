@@ -8,6 +8,159 @@
 #include <vector>
 #include <stdint.h>
 
+#include "stdio.h"
+
+#define DATA_SIZE_FULL 90
+#define PACKET_DATA_START 42
+#define IP_HEADER_LEN 20
+
+
+void Swap32( uint32_t* source, uint32_t* destination )
+{
+	auto source8	  = ( uint8_t* )source;
+	auto destination8 = ( uint8_t* )destination;
+	destination8[0] = source8[3];
+	destination8[1] = source8[2];
+	destination8[2] = source8[1];
+	destination8[3] = source8[0];
+}
+
+
+void Swap24( uint8_t* source, uint8_t* destination )
+{
+	destination[0] = source[2];
+	destination[2] = source[0];
+}
+
+
+void Swap16( uint16_t* source, uint16_t* destination )
+{
+	auto source8		 = ( uint8_t* )source;
+	auto destination8	 = ( uint8_t* )destination;
+	destination8[0] = source8[1];
+	destination8[1] = source8[0];
+}
+
+
+void increment_sequence_number( uint8_t* packet_start, int seq_data_offset, int increment ) {
+
+	uint32_t seq = *( ( uint32_t* )( packet_start + PACKET_DATA_START + seq_data_offset ) );
+
+	// zero out the last bits
+	seq &= 0x00ffffff;
+
+	// add the increment
+	seq += increment;
+
+	// stick it back in
+	packet_start[PACKET_DATA_START + seq_data_offset] = ( uint8_t )( seq & 0x000000ff );
+	packet_start[PACKET_DATA_START + seq_data_offset + 1] = ( uint8_t )( ( seq & 0x0000ff00 ) >> 8 );
+	packet_start[PACKET_DATA_START + seq_data_offset + 2] = ( uint8_t )( ( seq & 0x00ff0000 ) >> 16 );
+}
+
+
+
+uint16_t checksum_ip( const uint16_t* ipheader );
+uint16_t udp_sum_calc( uint16_t len_udp, uint16_t src_addr[], uint16_t dest_addr[], int padding, uint16_t buff[] );
+
+uint16_t write_checksum_ip( uint8_t* packet ) {
+
+	int i = 0;
+
+	// recast
+	uint16_t header_16[10];
+
+	printf( "\n" );
+	// swap
+	uint16_t tmp;
+	for ( i = 0; i < IP_HEADER_LEN / 2; i++ ) {
+		tmp = *( uint16_t* )( packet + 14 + 2 * i );
+		header_16[i] = ( tmp >> 8 ) | ( tmp << 8 );
+		printf( "%x ", header_16[i] );
+	}
+
+	uint16_t cs_ip = checksum_ip( header_16 );
+
+	// write it in
+	packet[25] = ( uint8_t )( cs_ip & 0x00ff );
+	packet[24] = ( uint8_t )( cs_ip >> 8 );
+
+	return cs_ip;
+}
+
+// checksum for the ip header
+uint16_t checksum_ip( const uint16_t* ipheader ) {
+
+	unsigned long sum = 0;
+
+	unsigned i;
+	for ( i = 0; i < 10; i++ ) {
+		if ( i != 5 ) { sum += ( unsigned long )( ipheader[i] ); }
+		if ( sum & 0x80000000 ) { sum = ( sum & 0xffff ) + ( sum >> 16 ); }
+	}
+
+	while ( sum >> 16 ) {
+		sum = ( sum & 0xffff ) + ( sum >> 16 );
+	}
+
+	return ( ~sum );
+}
+
+
+
+uint16_t udp_sum_calc( uint16_t len_udp, uint16_t src_addr[], uint16_t dest_addr[], int padding, uint16_t buff[] )
+{
+
+	uint16_t prot_udp = 17;
+	uint16_t padd = 0;
+	uint16_t word16;
+	uint32_t sum;
+
+	int i = 0;
+
+	// Find out if the length of data is even or odd number. If odd,
+	// add a padding byte = 0 at the end of packet
+	if ( padding ) {
+		padd = 1;
+		buff[len_udp] = 0;
+	}
+
+	//initialize sum to zero
+	sum = 0;
+
+	// make 16 bit words out of every two adjacent 8 bit words and
+	// calculate the sum of all 16 vit words
+	for ( i = 0; i < len_udp + padd; i += 2 ) {
+		word16 = buff[i / 2];
+		// word16 = (word16 >> 8) | (word16 << 8);
+		sum += ( uint32_t )word16;
+	}
+	// add the UDP pseudo header which contains the IP source and destinationn addresses
+	for ( i = 0; i < 4; i += 2 ) {
+		// word16 =((src_addr[i]<<8)&0xff00)+(src_addr[i+1]&0x00ff);
+		word16 = src_addr[i / 2];
+		// word16 = (word16 >> 8) | (word16 << 8);
+		sum += word16;
+	}
+	for ( i = 0; i<4; i = i + 2 ) {
+		// word16 =((dest_addr[i]<<8)&0xff00)+(dest_addr[i+1]&0x00ff);
+		word16 = dest_addr[i / 2];
+		// word16 = (word16 >> 8) | (word16 << 8);
+		sum += word16;
+	}
+	// the protocol number and the length of the UDP packet
+	sum = sum + prot_udp + len_udp;
+
+	// keep only the last 16 bits of the 32 bit calculated sum and add the carries
+	while ( sum >> 16 )
+		sum = ( sum & 0xffff ) + ( sum >> 16 );
+
+	// Take the one's complement of sum
+	sum = ~sum;
+
+	return ( ( uint16_t )sum );
+}
+
 constexpr char* FilterString = "dst 115.70.89.65";
 
 // Adapter handle.
@@ -74,6 +227,93 @@ uint32_t crc32( uint32_t crc, const void *buf, size_t size )
 }
 
 
+void InsertCrc32( uint8_t* data, size_t len )
+{
+	auto crc = crc32( 0x00000000, data + 42,
+		len - ( 42 + 4 ) );
+
+	uint32_t reversed = 0;
+	uint8_t* crcPtr = reinterpret_cast<uint8_t*>( &crc );
+	uint8_t* reversedPtr = reinterpret_cast<uint8_t*>( &reversed );
+	reversedPtr[0] = crcPtr[0];
+	reversedPtr[1] = crcPtr[1];
+	reversedPtr[2] = crcPtr[2];
+	reversedPtr[3] = crcPtr[3];
+
+	// Copy new CRC over.
+	data[86] = reversedPtr[0];
+	data[87] = reversedPtr[1];
+	data[88] = reversedPtr[2];
+	data[89] = reversedPtr[3];
+}
+
+
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned long u32;
+
+
+u16 udp_sum_calc( u16 len_udp, u8* src_addr, u8* dest_addr, bool padding, u8 buff[] )
+{
+	u16 prot_udp = 17;
+	u16 padd = 0;
+	u16 word16;
+	u32 sum;
+	u32 i;
+
+	// Find out if the length of data is even or odd number. If odd,
+	// add a padding byte = 0 at the end of packet
+	if ( ( padding & 1 ) == 1 ) {
+		padd = 1;
+		buff[len_udp] = 0;
+	}
+
+	//initialize sum to zero
+	sum = 0;
+
+	// make 16 bit words out of every two adjacent 8 bit words and 
+	// calculate the sum of all 16 vit words
+	for ( i = 0; i<len_udp + padd; i = i + 2 ) {
+		word16 = ( ( buff[i] << 8 ) & 0xFF00 ) + ( buff[i + 1] & 0xFF );
+		sum = sum + ( unsigned long )word16;
+	}
+	// add the UDP pseudo header which contains the IP source and destinationn addresses
+	for ( i = 0; i<4; i = i + 2 ) {
+		word16 = ( ( src_addr[i] << 8 ) & 0xFF00 ) + ( src_addr[i + 1] & 0xFF );
+		sum = sum + word16;
+	}
+	for ( i = 0; i<4; i = i + 2 ) {
+		word16 = ( ( dest_addr[i] << 8 ) & 0xFF00 ) + ( dest_addr[i + 1] & 0xFF );
+		sum = sum + word16;
+	}
+	// the protocol number and the length of the UDP packet
+	sum = sum + prot_udp + len_udp;
+
+	// keep only the last 16 bits of the 32 bit calculated sum and add the carries
+	while ( sum >> 16 )
+		sum = ( sum & 0xFFFF ) + ( sum >> 16 );
+
+	// Take the one's complement of sum
+	sum = ~sum;
+
+	return ( ( u16 )sum );
+}
+
+
+void InsertUDPChecksum( uint8_t* data )
+{
+	data[40] = 0;
+	data[41] = 0;
+	uint16_t* udp_length_tmp = ( uint16_t* )( data + 38 );
+	uint16_t udp_length = ( udp_length_tmp[0] >> 8 ) | ( udp_length_tmp[0] << 8 );
+
+	auto checksum = udp_sum_calc( udp_length, ( &( data[26] ) ),
+		( &( data[30] ) ), false, ( &( data[34] ) ) );
+
+	*( ( uint16_t* )( data + 40 ) ) = ( checksum >> 8 ) | ( checksum << 8 );
+}
+
+
 void PacketHandler( u_char* param, const pcap_pkthdr* header,
 	const u_char* pkt_data )
 {
@@ -85,8 +325,12 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 	if ( *( pkt_data + 69 ) == 0x95
 		&& *( pkt_data + 74 ) == 0xF7
 		&& *( pkt_data + 75 ) == 0xE6
-		&& *( pkt_data + 76 ) == 0xBA
-		&& *( pkt_data + 77 ) == 0xBD )
+		&& *( pkt_data + 76 ) == 0xBA	
+		&& *( pkt_data + 77 ) == 0xBD
+		&& *( pkt_data + 82 ) == '7'
+		&& *( pkt_data + 83 ) == '7' 
+		&& *( pkt_data + 84 ) == '7' 
+		&& *( pkt_data + 85 ) == '7' )
 	{
 		// Local time and size.
 		localTvSec = header->ts.tv_sec;
@@ -94,12 +338,6 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 		strftime( timeStr, sizeof( timeStr ), "%H:%M:%S", &ltime );
 		std::cout << timeStr << ", " << header->ts.tv_usec << " len: "
 			<< header->len << std::endl;
-
-		// Print out the entered code.
-		std::cout << "Entered code: " << *( pkt_data + 82 )
-			<< *( pkt_data + 83 )
-			<< *( pkt_data + 84 )
-			<< *( pkt_data + 85 ) << std::endl;
 
 		auto originalCrc = 0;
 		originalCrc		 |= ( ( uint32_t )( *( pkt_data + 86 ) ) ) << 24;
@@ -114,30 +352,24 @@ void PacketHandler( u_char* param, const pcap_pkthdr* header,
 		{
 			std::vector<u_char> copyPacket = std::vector<u_char>( header->len );
 			std::copy( pkt_data, pkt_data + header->len, copyPacket.begin() );
-#if 0
+			
 			// Just use this to test.
 			copyPacket[82] = '1';
 			copyPacket[83] = '2';
 			copyPacket[84] = '3';
 			copyPacket[85] = '4';
-#endif
 
-			auto crc	  = crc32( 0x00000000, copyPacket.data() + 42, 
-									header->len - ( 42 + 4 ) );
-			std::cout << "CRC: " << std::hex << crc << std::endl;
+			// Increment sequence numbers.
+			increment_sequence_number( copyPacket.data(), 5, 10 );
+			increment_sequence_number( copyPacket.data(), 11, 10 );
+			increment_sequence_number( copyPacket.data(), 14, 10 );
 
-			uint32_t reversed		= 0;
-			uint8_t* crcPtr			= reinterpret_cast<uint8_t*>( &crc );
-			uint8_t* reversedPtr	= reinterpret_cast<uint8_t*>( &reversed );
-			reversedPtr[0] = crcPtr[3];
-			reversedPtr[1] = crcPtr[2];
-			reversedPtr[2] = crcPtr[1];
-			reversedPtr[3] = crcPtr[0];
-
-			std::cout << "Reversed CRC: " << std::hex << reversed << std::endl;
+			InsertCrc32( copyPacket.data(), header->len );
+			write_checksum_ip( copyPacket.data() );
+			InsertUDPChecksum( copyPacket.data() );
 
 			// Send the copied packet.
-			//pcap_sendpacket( adHandle, copyPacket.data(), header->len );
+			pcap_sendpacket( adHandle, copyPacket.data(), header->len );
 		}
 	}
 }
