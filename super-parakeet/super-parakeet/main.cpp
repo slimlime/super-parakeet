@@ -3,9 +3,6 @@
 
 #include "stdafx.h"
 
-// fix some error that bok apparently doesn't have
-#define HAVE_REMOTE
-
 #include <pcap.h>
 #include <iostream>
 #include <vector>

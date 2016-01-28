@@ -2,6 +2,7 @@
 
 #include "packetutils.h"
 
+// don't use this now!
 #define DATA_SIZE_FULL 90
 #define PACKET_DATA_START 42
 
@@ -201,7 +202,7 @@ static uint32_t crc32_tab[] = {
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
-uint32_t crc32(uint32_t crc, const void *buf, size_t size)
+uint32_t crc32 (uint32_t crc, const void *buf, size_t size)
 {
 	const uint8_t *p;
 
@@ -215,7 +216,7 @@ uint32_t crc32(uint32_t crc, const void *buf, size_t size)
 }
 
 
-void InsertCrc32(uint8_t* data, size_t len)
+void InsertCrc32 (uint8_t* data, size_t len)
 {
 	auto crc = crc32(0x00000000, data + 42,
 		len - (42 + 4));
@@ -235,20 +236,25 @@ void InsertCrc32(uint8_t* data, size_t len)
 	data[len - 1] = reversedPtr[3];
 }
 
-void InsertUDPChecksum(uint8_t* data, uint32_t len)
+void InsertUDPChecksum (uint8_t* packet_start, uint32_t len)
 {
-	data[40] = 0;
-	data[41] = 0;
-	uint16_t* udp_length_tmp = (uint16_t*)(data + 38);
+	// set the current checksum to 0
+	packet_start[40] = 0;
+	packet_start[41] = 0;
+
+	// get length from header (swap cause it's in big endian)
+	uint16_t* udp_length_tmp = (uint16_t*)(packet_start + 38);
 	uint16_t udp_length = (udp_length_tmp[0] >> 8) | (udp_length_tmp[0] << 8);
 
-	auto checksum = udp_sum_calc(udp_length, (&(data[26])),
-		(&(data[30])), (len % 2 == 0) ? false : true, (&(data[34])));
+	// calculate it
+	auto checksum = udp_sum_calc(udp_length, (&(packet_start[26])),
+		(&(packet_start[30])), (len % 2 == 0) ? false : true, (&(packet_start[34])));
 
-	*((uint16_t*)(data + 40)) = (checksum >> 8) | (checksum << 8);
+	// write it in (swap again, back to big endian)
+	*((uint16_t*)(packet_start + 40)) = (checksum >> 8) | (checksum << 8);
 }
 
-uint32_t getUDPPacketSize(const uint8_t* packetStart) {
+uint32_t getUDPPacketSize (const uint8_t* packetStart) {
 
 	uint32_t packetSize = getUDPLength(packetStart) + MAC_HEADER_LEN + IP_HEADER_LEN;
 	
