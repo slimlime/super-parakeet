@@ -16,7 +16,7 @@
 #include "codelockpacket.h"
 #include "snaptrappacket.h"
 
-constexpr char* FilterString = "dst 103.13.101.191 && proto 17";
+constexpr char* FilterString = "dst 192.168.0.12 && proto 17";
 
 // Adapter handle.
 pcap_t*			adHandle = nullptr;
@@ -79,6 +79,10 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 				// set bitflags to type unreliable
 				copyPacket.data()[50] = 0x00;
 
+				// set timestamps = 0
+				*((uint32_t*)(copyPacket.data() + 43)) = 0;
+				*((uint32_t*)(copyPacket.data() + 61)) = 0;
+
 				// erase redundant data
 				copyPacket.erase(copyPacket.begin() + 53, copyPacket.begin() + 60);
 
@@ -86,7 +90,7 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 				writeSendUnreliableCodelockPacket(copyPacket.data(), header->len - 7, adHandle);
 
 				// don't spam too much!
-				if (i % 10 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				if (i % 1 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			}
 		}
 
