@@ -27,6 +27,13 @@ int isCodelockPacket(const uint8_t* packetStart, uint32_t packetSize) {
 	}
 }
 
+
+int isCodelockUnlockedPacket( const uint8_t* packetStart, uint32_t packetSize )
+{
+	return 0;
+}
+
+
 int compareCodelockPacketCode(const uint8_t* packet_start, const uint8_t* code) {
 
 	return (packet_start[85] == code[0] &&

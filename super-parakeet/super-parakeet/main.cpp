@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <thread>
 #include <set>
+#include <atomic>
 
 #include "stdio.h"
 
@@ -16,10 +17,14 @@
 #include "codelockpacket.h"
 #include "snaptrappacket.h"
 
-constexpr char* FilterString = "dst 192.168.0.12 && proto 17";
+constexpr char* FilterString = "dst 115.70.89.65 && proto 17";
 
 // Adapter handle.
-pcap_t*			adHandle = nullptr;
+pcap_t*			adHandle	= nullptr;
+
+std::thread			sendThread;
+std::atomic_bool	isSending;
+std::atomic_bool	isCodeFound;
 
 
 
@@ -35,6 +40,65 @@ struct {
 } snaptrapFieldState;
 
 
+void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
+{
+	printf( "Firing in 10 seconds ...\n" );
+
+	std::this_thread::sleep_for( std::chrono::milliseconds( 10000 ) );
+
+	// allocate copy outside of loop - we won't need as much memory, because we're
+	// removing certain bytes to make it unreliable
+	// but it's easier to copy the whole thing then erase that bit out
+	std::vector<u_char> copyPacket = std::vector<u_char>( originalPacket.size() );
+
+	// length of new, shorter packet
+	uint32_t lenNew = originalPacket.size() - 7;
+
+	if ( adHandle != nullptr ) {
+		for ( int i = 0; i < 20000; i++ ) {
+
+			int code = i % 10000;
+
+			if ( code == 7777 ) continue;
+
+			// We've found the code. Print it out and stop sending.
+			if( isCodeFound.load() )
+			{
+				std::cout << "Code found: " << code;
+				isSending.store( false );
+				return;
+			}
+
+			// resize and copy the data in
+			copyPacket.resize( originalPacket.size() );
+			std::copy( originalPacket.begin(), originalPacket.end(),
+				copyPacket.begin() );
+
+			// write the code in
+			writeCode( copyPacket.data(), code );
+
+			// set bitflags to type unreliable
+			copyPacket.data()[50] = 0x00;
+
+			// set timestamps = 0
+			*( ( uint32_t* )( copyPacket.data() + 43 ) ) = 0;
+			*( ( uint32_t* )( copyPacket.data() + 61 ) ) = 0;
+
+			// erase redundant data
+			copyPacket.erase( copyPacket.begin() + 53, copyPacket.begin() + 60 );
+
+			// nice
+			writeSendUnreliableCodelockPacket( copyPacket.data(), lenNew, adHandle );
+
+			// don't spam too much!
+			if ( i % 10 == 0 ) std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+		}
+	}
+
+	printf( "\nDone sending!" );
+}
+
+
 // same as CodelockCracker, but sends UNRELIABLE mode packets
 // ideally this won't cause the player to time out
 void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* header,
@@ -42,59 +106,23 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 
 	uint8_t triggerCode[] = { '7', '7', '7', '7' };
 
-	// handle codelock submission packets
+	// handle codelock submission packets. Make sure we're not already sending.
 	if (isCodelockPacket(pkt_data, header->len) &&
-		compareCodelockPacketCode(pkt_data, triggerCode)) {
+		compareCodelockPacketCode(pkt_data, triggerCode)
+		&& !isSending.load() ) {
 
-		printf("Firing in 10 seconds ...\n");
+		isSending.store( true );
+		isCodeFound.store( false );
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-
-		// allocate copy outside of loop - we won't need as much memory, because we're
-		// removing certain bytes to make it unreliable
-		// but it's easier to copy the whole thing then erase that bit out
-		std::vector<u_char> copyPacket = std::vector<u_char>(header->len);
-
-		// length of new, shorter packet
-		uint32_t lenNew = header->len - 7;
-
-		// keep enough memory around
-		copyPacket.reserve(header->len);
-
-		if (adHandle != nullptr) {
-
-			for (int i = 0; i < 20000; i++) {
-
-				int code = i % 10000;
-
-				if (i == 7777) continue;
-
-				// resize and copy the data in
-				copyPacket.resize(header->len);
-				std::copy(pkt_data, pkt_data + header->len, copyPacket.begin());
-
-				// write the code in
-				writeCode(copyPacket.data(), code);
-
-				// set bitflags to type unreliable
-				copyPacket.data()[50] = 0x00;
-
-				// set timestamps = 0
-				*((uint32_t*)(copyPacket.data() + 43)) = 0;
-				*((uint32_t*)(copyPacket.data() + 61)) = 0;
-
-				// erase redundant data
-				copyPacket.erase(copyPacket.begin() + 53, copyPacket.begin() + 60);
-
-				// nice
-				writeSendUnreliableCodelockPacket(copyPacket.data(), header->len - 7, adHandle);
-
-				// don't spam too much!
-				if (i % 1 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			}
-		}
-
-		printf("\nDone sending!");
+		// Send the code packets on a new thread so we can catch a reply here.
+		auto originalPacket = std::vector<u_char>( header->len );
+		std::copy( pkt_data, pkt_data + header->len, originalPacket.begin() );
+		sendThread = std::thread( SendCodeLockPackets, adHandle, originalPacket );
+	}
+	else if( isCodelockUnlockedPacket( pkt_data, header->len ) )
+	{
+		// Tell the sending thread that we've found the code.
+		isCodeFound.store( true );
 	}
 }
 
