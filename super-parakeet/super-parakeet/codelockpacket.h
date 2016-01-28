@@ -4,6 +4,7 @@
 
 int isCodelockPacket (const uint8_t* packetStart, uint32_t packetSize);
 int isCodelockUnlockedPacket( const uint8_t* packetStart, uint32_t packetSize );
+int isCodelockLockedPacket( const uint8_t* packetStart, uint32_t packetSize );
 
 int compareCodelockPacketCode(const uint8_t* packet_start, const uint8_t* code);
 

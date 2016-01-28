@@ -23,6 +23,7 @@ constexpr char* FilterString = "dst 115.70.89.65 && proto 17";
 pcap_t*			adHandle	= nullptr;
 
 std::thread			sendThread;
+std::atomic_int32_t codeFailureCount;
 std::atomic_bool	isSending;
 std::atomic_bool	isCodeFound;
 
@@ -64,7 +65,7 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 			// We've found the code. Print it out and stop sending.
 			if( isCodeFound.load() )
 			{
-				std::cout << "Code found: " << code;
+				std::cout << "Code found: " << codeFailureCount.load();
 				isSending.store( false );
 				return;
 			}
@@ -114,10 +115,19 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 		isSending.store( true );
 		isCodeFound.store( false );
 
+		// How many times have we failed to guess the code? Count this to get a
+		// more accurate code at the end.
+		codeFailureCount.store( 0 );
+
 		// Send the code packets on a new thread so we can catch a reply here.
 		auto originalPacket = std::vector<u_char>( header->len );
 		std::copy( pkt_data, pkt_data + header->len, originalPacket.begin() );
 		sendThread = std::thread( SendCodeLockPackets, adHandle, originalPacket );
+	}
+	else if( isCodelockLockedPacket( pkt_data, header->len ) )
+	{
+		// Not the right code, count this.
+		codeFailureCount.store( codeFailureCount.load() + 1 );
 	}
 	else if( isCodelockUnlockedPacket( pkt_data, header->len ) )
 	{

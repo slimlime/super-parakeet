@@ -30,6 +30,14 @@ int isCodelockPacket(const uint8_t* packetStart, uint32_t packetSize) {
 
 int isCodelockUnlockedPacket( const uint8_t* packetStart, uint32_t packetSize )
 {
+	// TODO: Make this work.
+	return 0;
+}
+
+
+int isCodelockLockedPacket( const uint8_t* packetStart, uint32_t packetSize )
+{
+	// TODO: Make this work.
 	return 0;
 }
 

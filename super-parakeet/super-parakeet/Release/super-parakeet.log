@@ -1,5 +1,8 @@
 ﻿  codelockpacket.cpp
+  main.cpp
   Generating code
-  All 799 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  17 of 812 functions ( 2.1%) were compiled, the rest were copied from previous compilation.
+    13 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
   super-parakeet.vcxproj -> C:\Users\Ben\Documents\GitHub\super-parakeet\super-parakeet\Release\super-parakeet.exe
