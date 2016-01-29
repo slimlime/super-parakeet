@@ -17,7 +17,9 @@
 #include "codelockpacket.h"
 #include "snaptrappacket.h"
 
-constexpr char* FilterString = "dst 115.70.89.65 && proto 17";
+
+// if something's not working check this first!
+constexpr char* FilterString = "(dst 192.168.0.12 || src 192.168.0.12) && proto 17";
 
 // Adapter handle.
 pcap_t*			adHandle	= nullptr;
@@ -27,15 +29,14 @@ std::atomic_int32_t codeFailureCount;
 std::atomic_bool	isSending;
 std::atomic_bool	isCodeFound;
 
-
-
 // struct storing state for snaptrap field system
 struct {
 
 	// set of snaptrap IDs that'll be armed
 	std::set<uint32_t> snaptrapIDs;
 
-	// the last snaptrap packet data received, just for reference
+	// the last snaptrap packet data received - get's copied and sent
+	// (modified first) for each snaptrap when the remote arming is triggered
 	uint8_t snaptrapPacketLast[SNAPTRAP_PACKET_SIZE];
 
 } snaptrapFieldState;
@@ -43,12 +44,13 @@ struct {
 
 void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 {
-	printf( "Firing in 10 seconds ...\n" );
+	printf( "Firing in 2 seconds ...\n" );
 
-	std::this_thread::sleep_for( std::chrono::milliseconds( 10000 ) );
+	// delay to allow for suicide (less suspicious than getting killed by a code lock)
+	std::this_thread::sleep_for( std::chrono::milliseconds( 2000 ) );
 
 	// allocate copy outside of loop - we won't need as much memory, because we're
-	// removing certain bytes to make it unreliable
+	// removing certain bytes to make it fit the raknet UNRELIABLE packet type
 	// but it's easier to copy the whole thing then erase that bit out
 	std::vector<u_char> copyPacket = std::vector<u_char>( originalPacket.size() );
 
@@ -56,6 +58,7 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 	uint32_t lenNew = originalPacket.size() - 7;
 
 	if ( adHandle != nullptr ) {
+
 		for ( int i = 0; i < 20000; i++ ) {
 
 			int code = i % 10000;
@@ -65,8 +68,10 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 			// We've found the code. Print it out and stop sending.
 			if( isCodeFound.load() )
 			{
-				std::cout << "Code found: " << codeFailureCount.load();
+				//std::cout << "Code found: " << codeFailureCount.load();
+				printf("got that sweet sweet code: %i\n", codeFailureCount.load());
 				isSending.store( false );
+
 				return;
 			}
 
@@ -92,7 +97,7 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 			writeSendUnreliableCodelockPacket( copyPacket.data(), lenNew, adHandle );
 
 			// don't spam too much!
-			if ( i % 10 == 0 ) std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+			if ( i % 1 == 0 ) std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
 		}
 	}
 
@@ -102,10 +107,13 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 
 // same as CodelockCracker, but sends UNRELIABLE mode packets
 // ideally this won't cause the player to time out
+// now includes multithreading + attempting to actually deduce the correct code
 void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* header,
 	const u_char* pkt_data) {
 
 	uint8_t triggerCode[] = { '7', '7', '7', '7' };
+
+	uint16_t packetIdentifierOffset;
 
 	// handle codelock submission packets. Make sure we're not already sending.
 	if (isCodelockPacket(pkt_data, header->len) &&
@@ -124,15 +132,19 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 		std::copy( pkt_data, pkt_data + header->len, originalPacket.begin() );
 		sendThread = std::thread( SendCodeLockPackets, adHandle, originalPacket );
 	}
-	else if( isCodelockLockedPacket( pkt_data, header->len ) )
-	{
+	else if(packetIdentifierOffset = isCodelockDeniedPacket(pkt_data, header->len)) {
+		
 		// Not the right code, count this.
 		codeFailureCount.store( codeFailureCount.load() + 1 );
 	}
-	else if( isCodelockUnlockedPacket( pkt_data, header->len ) )
-	{
-		// Tell the sending thread that we've found the code.
-		isCodeFound.store( true );
+	else if(packetIdentifierOffset = isCodelockUnlockedPacket(pkt_data, header->len)) {
+		
+		// tell sending thread we found code
+		isCodeFound.store(true);
+
+		// print some MORE shit for good measure
+		printf("unlock packet, id: %x\n", 
+			getCodelockIDFromLockUnlockPacket(pkt_data, packetIdentifierOffset));
 	}
 }
 

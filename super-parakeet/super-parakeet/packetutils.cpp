@@ -109,7 +109,8 @@ typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned long u32;
 
-u16 udp_sum_calc(u16 len_udp, u8* src_addr, u8* dest_addr, bool padding, u8 buff[])
+uint16_t udp_sum_calc(uint16_t len_udp, uint8_t* src_addr, uint8_t* dest_addr, 
+	int padding, uint8_t* buff)
 {
 	u16 prot_udp = 17;
 	u16 padd = 0;

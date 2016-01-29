@@ -28,5 +28,6 @@ uint32_t getUDPLength(const uint8_t* packetStart);
 // don't call these - use write_checksum_ip, InsertCrc32, and InsertUDPChecksum
 // respectively (and make sure you do it in that order)
 uint16_t checksum_ip(const uint16_t* ipheader);
-uint16_t udp_sum_calc(uint16_t len_udp, uint16_t src_addr[], uint16_t dest_addr[], int padding, uint16_t buff[]);
+uint16_t udp_sum_calc(uint16_t len_udp, uint8_t* src_addr, uint8_t* dest_addr,
+	int padding, uint8_t* buff);
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);
