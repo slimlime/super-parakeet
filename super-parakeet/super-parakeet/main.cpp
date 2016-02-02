@@ -19,7 +19,7 @@
 
 
 // if something's not working check this first!
-constexpr char* FilterString = "(dst 192.168.0.12 || src 192.168.0.12) && proto 17";
+constexpr char* FilterString = "(dst 103.13.101.191 || src 103.13.101.191) && proto 17";
 
 // Adapter handle.
 pcap_t*			adHandle	= nullptr;
@@ -42,12 +42,20 @@ struct {
 } snaptrapFieldState;
 
 
+void DelayPrintFinalCode() {
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+	// after waiting for a bit, let's see what the count is
+	printf("got that sweet sweet code: %i\n", codeFailureCount.load());
+}
+
 void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 {
-	printf( "Firing in 2 seconds ...\n" );
+	printf( "Firing in 10 seconds ...\n" );
 
 	// delay to allow for suicide (less suspicious than getting killed by a code lock)
-	std::this_thread::sleep_for( std::chrono::milliseconds( 2000 ) );
+	std::this_thread::sleep_for( std::chrono::milliseconds( 10000 ) );
 
 	// allocate copy outside of loop - we won't need as much memory, because we're
 	// removing certain bytes to make it fit the raknet UNRELIABLE packet type
@@ -65,13 +73,10 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 
 			if ( code == 7777 ) continue;
 
-			// We've found the code. Print it out and stop sending.
-			if( isCodeFound.load() )
-			{
-				//std::cout << "Code found: " << codeFailureCount.load();
-				printf("got that sweet sweet code: %i\n", codeFailureCount.load());
-				isSending.store( false );
+			// we've found the code, so stop sending packets
+			if(isCodeFound.load()) {
 
+				isSending.store( false );
 				return;
 			}
 
@@ -97,7 +102,7 @@ void SendCodeLockPackets( pcap_t* adHandle, std::vector<u_char> originalPacket )
 			writeSendUnreliableCodelockPacket( copyPacket.data(), lenNew, adHandle );
 
 			// don't spam too much!
-			if ( i % 1 == 0 ) std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
+			if ( i % 1 == 0 ) std::this_thread::sleep_for( std::chrono::milliseconds( 15 ) );
 		}
 	}
 
@@ -138,6 +143,8 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 		codeFailureCount.store( codeFailureCount.load() + 1 );
 	}
 	else if(packetIdentifierOffset = isCodelockUnlockedPacket(pkt_data, header->len)) {
+
+		// what we really need at this point is a third thread, to set the timer 
 		
 		// tell sending thread we found code
 		isCodeFound.store(true);
