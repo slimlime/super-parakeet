@@ -152,6 +152,8 @@ void PacketHandler_CodelockCrackerUnreliable(u_char* param, const pcap_pkthdr* h
 		// print some MORE shit for good measure
 		printf("unlock packet, id: %x\n", 
 			getCodelockIDFromLockUnlockPacket(pkt_data, packetIdentifierOffset));
+
+		std::thread(DelayPrintFinalCode);
 	}
 }
 
