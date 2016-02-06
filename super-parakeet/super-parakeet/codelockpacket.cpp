@@ -183,7 +183,6 @@ void writeSendCodelockPacket(uint8_t* packet_start, int code,
 	increment_sequence_number(packet_start, 14, count);
 
 	// checksums
-	InsertCrc32(packet_start, len);
 	write_checksum_ip(packet_start);
 	InsertUDPChecksum(packet_start, len);
 
@@ -213,7 +212,6 @@ void writeSendUnreliableCodelockPacket(uint8_t* packet_start, uint32_t len, pcap
 	//*((uint16_t*)(packet_start + 38)) = lenNew;
 
 	// checksums
-	InsertCrc32(packet_start, len);
 	write_checksum_ip(packet_start);
 	InsertUDPChecksum(packet_start, len);
 

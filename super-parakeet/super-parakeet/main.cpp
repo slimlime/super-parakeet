@@ -266,7 +266,6 @@ void PacketHandler_SnaptrapField(u_char* param, const pcap_pkthdr* header,
 			std::advance(snaptrapIDsIt, 1);
 
 			// sweet sweet checksums
-			InsertCrc32(copyPacket.data(), SNAPTRAP_PACKET_SIZE);
 			write_checksum_ip(copyPacket.data());
 			InsertUDPChecksum(copyPacket.data(), SNAPTRAP_PACKET_SIZE);
 
